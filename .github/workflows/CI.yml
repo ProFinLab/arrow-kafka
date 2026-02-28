@@ -14,6 +14,17 @@ on:
       - '*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_target:
+        description: 'Publish target'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - testpypi
+          - pypi
+          - crate
+          - all
 
 permissions:
   contents: read
@@ -164,11 +175,8 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     needs: [linux, musllinux, windows, macos, sdist]
     permissions:
-      # Use to sign the release artifacts
       id-token: write
-      # Used to upload release artifacts
       contents: write
-      # Used to generate artifact attestation
       attestations: write
     steps:
       - uses: actions/download-artifact@v6
@@ -177,10 +185,27 @@ jobs:
         with:
           subject-path: 'wheels-*/*'
       - name: Install uv
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: astral-sh/setup-uv@v7
+      - name: Publish to TestPyPI
+        if: ${{ (startsWith(github.ref, 'refs/tags/') && contains(github.ref, 'rc') || contains(github.ref, 'alpha') || contains(github.ref, 'beta')) || github.event.inputs.publish_target == 'testpypi' || github.event.inputs.publish_target == 'all' }}
+        run: uv publish 'wheels-*/*' --index-url https://test.pypi.org/simple/
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
       - name: Publish to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc') && !contains(github.ref, 'alpha') && !contains(github.ref, 'beta')) || github.event.inputs.publish_target == 'pypi' || github.event.inputs.publish_target == 'all' }}
         run: uv publish 'wheels-*/*'
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+  release-crate:
+    name: Release to crates.io
+    runs-on: ubuntu-latest
+    if: ${{ (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc') && !contains(github.ref, 'alpha') && !contains(github.ref, 'beta')) || github.event.inputs.publish_target == 'crate' || github.event.inputs.publish_target == 'all' }}
+    needs: [linux, musllinux, windows, macos, sdist]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Publish arrow-kafka to crates.io
+        run: cargo publish -p arrow-kafka
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
