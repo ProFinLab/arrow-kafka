@@ -60,7 +60,13 @@ jobs:
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
           before-script-linux: |
-            yum install -y perl-IPC-Cmd || dnf install -y perl-IPC-Cmd
+            if command -v yum >/dev/null 2>&1; then
+              yum install -y perl-IPC-Cmd
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y perl-IPC-Cmd
+            elif command -v apt-get >/dev/null 2>&1; then
+              apt-get update -qq && apt-get install -y --no-install-recommends perl
+            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
