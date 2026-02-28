@@ -1,0 +1,26 @@
+[package]
+name = "arrow-kafka"
+version = "0.1.0"
+edition = "2024"
+description = "Rust-based high-performance Kafka sink with Arrow zero-copy support"
+authors = ["NanoQuant Team"]
+license = "MIT"
+
+[lib]
+name = "arrow_kafka"
+crate-type = ["rlib"]
+
+[dependencies]
+arrow = { workspace = true }
+arrow-avro = { workspace = true }
+apache-avro = { workspace = true }
+rdkafka = { workspace = true, features = ["cmake-build"] }
+schema_registry_converter = { workspace = true }
+anyhow = { workspace = true }
+
+[package.metadata.vcpkg]
+git = "https://github.com/microsoft/vcpkg"
+rev = "master"
+dependencies = ["openssl", "librdkafka"]
+[package.metadata.vcpkg.target.x86_64-pc-windows-msvc]
+install-options = ["--triplet=x64-windows-static-md"]

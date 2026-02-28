@@ -1,0 +1,24 @@
+# Minimal Redpanda + Schema Registry for arrow-kafka integration tests.
+# Run: docker compose up -d
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: arrow-kafka-redpanda
+    ports:
+      - "18081:8081"
+      - "9092:9092"
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr internal://redpanda:29092,external://localhost:9092
+      - --schema-registry-addr 0.0.0.0:8081
+      - --set redpanda.auto_create_topics_enabled=true
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
