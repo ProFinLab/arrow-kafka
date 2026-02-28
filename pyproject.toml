@@ -1,13 +1,40 @@
 [build-system]
-requires = ["maturin>=1.11,<2.0"]
+requires = ["maturin>=1.11.5"]
 build-backend = "maturin"
 
 [project]
-name = "arrow-kafka"
-requires-python = ">=3.8"
+name = "arrow-kafka-pyo3"
+description = "High-performance Python bridge from PyArrow tables to Kafka/Redpanda via zero-copy Arrow FFI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "NanoQuant Team" }]
+keywords = ["arrow", "kafka", "pyarrow", "redpanda", "avro", "schema-registry"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dynamic = ["version"]
+dependencies = ["pyarrow>=18.0.0"]
+
+[project.urls]
+Repository = "https://github.com/nanoquant/arrow-kafka"
+
+[tool.maturin]
+manifest-path = "crates/arrow-kafka-pyo3/Cargo.toml"
+features = ["pyo3/extension-module"]
+# Include type stub in wheel (maturin includes *.pyi in package dir by default when present)
+include = ["arrow_kafka_pyo3.pyi"]
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+    "pyarrow",
+    "confluent_kafka"
+]

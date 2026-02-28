@@ -2,6 +2,7 @@
 Integration test: ArrowKafkaSink produce to Redpanda, then consume back.
 Requires: docker compose up -d (from repo root), maturin develop in crates/arrow-kafka-pyo3.
 """
+
 from __future__ import annotations
 
 import time

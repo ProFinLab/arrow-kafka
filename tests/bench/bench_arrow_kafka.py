@@ -3,6 +3,7 @@ arrow-kafka-pyo3 performance benchmark.
 Requires: docker compose up -d, maturin develop in crates/arrow-kafka-pyo3.
 Run: python tests/bench/bench_arrow_kafka.py
 """
+
 from __future__ import annotations
 
 import random
@@ -24,7 +25,10 @@ def gen_stock_table(n_rows: int) -> pa.Table:
         for _ in range(n_rows)
     ]
     dates = [20240101 + (i % 365) for i in range(n_rows)]
-    rand_f64 = lambda: [round(random.uniform(5.0, 500.0), 2) for _ in range(n_rows)]
+
+    def rand_f64():
+        return [round(random.uniform(5.0, 500.0), 2) for _ in range(n_rows)]
+
     return pa.table(
         {
             "symbol": symbols,
@@ -138,7 +142,11 @@ def main() -> None:
 
     print("\n── 2. Key overhead ──")
     table = gen_stock_table(100_000)
-    for label, keys in [("no_key", None), ("single_key", ["symbol"]), ("composite_key", ["symbol", "trade_date"])]:
+    for label, keys in [
+        ("no_key", None),
+        ("single_key", ["symbol"]),
+        ("composite_key", ["symbol", "trade_date"]),
+    ]:
         topic = f"bench_key_{label}"
         r = run_one(f"100K_{label}", table, topic, key_cols=keys)
         all_results.append(r)
@@ -146,7 +154,9 @@ def main() -> None:
 
     print("\n" + "=" * 120)
     peak = max(all_results, key=lambda r: r.rows_per_sec)
-    print(f"  Peak: {peak.rows_per_sec:,.0f} rows/s  ({peak.mb_per_sec:.2f} MB/s)  [{peak.name}]")
+    print(
+        f"  Peak: {peak.rows_per_sec:,.0f} rows/s  ({peak.mb_per_sec:.2f} MB/s)  [{peak.name}]"
+    )
     print("=" * 120)
 
 
