@@ -53,7 +53,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          sccache: false
           manylinux: manylinux_2_28
           before-script-linux: |
             if command -v dnf >/dev/null 2>&1; then
