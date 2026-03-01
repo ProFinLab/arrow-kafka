@@ -14,6 +14,6 @@ crate-type = ["rlib"]
 arrow = { workspace = true }
 arrow-avro = { workspace = true }
 apache-avro = { workspace = true }
-rdkafka = { workspace = true, features = ["cmake-build"] }
+rdkafka = { workspace = true}
 schema_registry_converter = { workspace = true }
 anyhow = { workspace = true }
