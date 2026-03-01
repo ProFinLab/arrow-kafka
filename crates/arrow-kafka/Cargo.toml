@@ -21,3 +21,4 @@ rdkafka = { workspace = true }
 schema_registry_converter = { workspace = true }
 openssl = { version = "0.10", optional = true }
 anyhow = { workspace = true }
+tokio = { version = "1", features = ["rt"] }
