@@ -181,25 +181,26 @@ fn error_config_display_contains_cause() {
 
 #[test]
 fn strategy_from_str_topic_name() {
-    let s = SubjectNameStrategy::from_str("topic_name").expect("valid");
+    let s: SubjectNameStrategy = "topic_name".parse().expect("valid");
     assert!(matches!(s, SubjectNameStrategy::TopicName));
 }
 
 #[test]
 fn strategy_from_str_record_name() {
-    let s = SubjectNameStrategy::from_str("record_name").expect("valid");
+    let s: SubjectNameStrategy = "record_name".parse().expect("valid");
     assert!(matches!(s, SubjectNameStrategy::RecordName));
 }
 
 #[test]
 fn strategy_from_str_topic_record_name() {
-    let s = SubjectNameStrategy::from_str("topic_record_name").expect("valid");
+    let s: SubjectNameStrategy = "topic_record_name".parse().expect("valid");
     assert!(matches!(s, SubjectNameStrategy::TopicRecordName));
 }
 
 #[test]
 fn strategy_from_str_unknown_returns_err_with_hint() {
-    let err = SubjectNameStrategy::from_str("bad_value").unwrap_err();
+    let err: Result<SubjectNameStrategy, _> = "bad_value".parse();
+    let err = err.unwrap_err();
     // Error message must name the invalid input AND list valid alternatives.
     assert!(err.contains("bad_value"), "input not echoed: {err}");
     assert!(err.contains("topic_name"), "valid values not listed: {err}");
@@ -424,7 +425,7 @@ fn consume_arrow_empty_slice_returns_zero_without_io() {
     // Pass an empty slice — this must short-circuit before any network call
     // (schema registry or broker), so it succeeds even with an invalid
     // bootstrap address.
-    let result = sink.consume_arrow(&[], "any_topic", None, "_", None);
+    let result = sink.consume_arrow(&[], "any_topic", None, "_", None, None);
     assert_eq!(result.expect("empty slice must return Ok(0)"), 0);
 }
 

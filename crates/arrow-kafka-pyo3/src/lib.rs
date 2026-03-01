@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::ffi_stream::ArrowArrayStreamReader;
@@ -187,6 +188,7 @@ impl ArrowKafkaSinkPy {
         retry_backoff_ms     = 100,
         request_timeout_ms   = 30000,
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         kafka_servers: String,
         schema_registry_url: String,
@@ -201,8 +203,9 @@ impl ArrowKafkaSinkPy {
         retry_backoff_ms: u32,
         request_timeout_ms: u32,
     ) -> PyResult<Self> {
-        let strategy = SubjectNameStrategy::from_str(&subject_name_strategy)
-            .map_err(|e| ConfigError::new_err(e))?;
+        let strategy = subject_name_strategy
+            .parse::<SubjectNameStrategy>()
+            .map_err(ConfigError::new_err)?;
 
         let inner = CoreSink::new(
             kafka_servers,
@@ -258,7 +261,9 @@ impl ArrowKafkaSinkPy {
         key_cols      = None,
         key_separator = "_".to_string(),
         timeout_ms    = None,
+        headers       = None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub fn consume_arrow(
         &self,
         py: Python<'_>,
@@ -267,12 +272,21 @@ impl ArrowKafkaSinkPy {
         key_cols: Option<Vec<String>>,
         key_separator: String,
         timeout_ms: Option<u64>,
+        headers: Option<HashMap<String, Vec<u8>>>,
     ) -> PyResult<usize> {
         let key_cols = key_cols.unwrap_or_default();
         let sink = Arc::clone(&self.inner);
 
         py.detach(move || {
-            consume_arrow_impl(&sink, &table, &topic, &key_cols, &key_separator, timeout_ms)
+            consume_arrow_impl(
+                &sink,
+                &table,
+                &topic,
+                &key_cols,
+                &key_separator,
+                timeout_ms,
+                headers,
+            )
         })
     }
 
@@ -436,6 +450,7 @@ fn consume_arrow_impl(
     key_cols: &[String],
     key_separator: &str,
     timeout_ms: Option<u64>,
+    headers: Option<HashMap<String, Vec<u8>>>,
 ) -> PyResult<usize> {
     // Re-acquire GIL briefly for the FFI conversion from PyArrow.
     let batches: Vec<RecordBatch> = Python::attach(|py| -> PyResult<_> {
@@ -464,6 +479,13 @@ fn consume_arrow_impl(
     };
 
     // Pure Rust serialisation + librdkafka enqueuing — GIL not held.
-    sink.consume_arrow(&batches, topic, key_cols_opt, key_separator, timeout_ms)
-        .map_err(sink_err_to_pyerr)
+    sink.consume_arrow(
+        &batches,
+        topic,
+        key_cols_opt,
+        key_separator,
+        timeout_ms,
+        headers.as_ref(),
+    )
+    .map_err(sink_err_to_pyerr)
 }

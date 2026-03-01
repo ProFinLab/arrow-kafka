@@ -11,7 +11,8 @@ import pyarrow as pa
 #   ├── EnqueueError
 #   ├── FlushTimeoutError
 #   ├── UnsupportedTypeError
-#   └── ConfigError
+#   ├── ConfigError
+#   └── AdminError
 # ---------------------------------------------------------------------------
 
 class ArrowKafkaError(RuntimeError):
@@ -98,7 +99,9 @@ class UnsupportedTypeError(ArrowKafkaError):
     :meth:`ArrowKafkaSink.consume_arrow`.
 
     Supported Arrow types: ``Utf8``, ``LargeUtf8``, ``Int8``–``Int64``,
-    ``UInt8``–``UInt64``, ``Float32``, ``Float64``, ``Boolean``.
+    ``UInt8``–``UInt64``, ``Float32``, ``Float64``, ``Boolean``,
+    ``Date32``, ``Date64``, ``Timestamp`` (all units), ``Binary``,
+    ``LargeBinary``, ``FixedSizeBinary``, ``Decimal128``.
 
     ``str(exc)`` has the form::
 
@@ -117,6 +120,62 @@ class ConfigError(ArrowKafkaError):
 
         configuration error: {cause}
     """
+
+class AdminError(ArrowKafkaError):
+    """Kafka topic administration operation failed.
+
+    Raised by :func:`create_topic_if_not_exists` when the AdminClient cannot
+    reach the broker or the broker rejects the request.
+
+    ``str(exc)`` has the form::
+
+        admin error [topic={topic}]: {cause}
+    """
+
+# ---------------------------------------------------------------------------
+# SinkStats
+# ---------------------------------------------------------------------------
+
+class SinkStats:
+    """A point-in-time snapshot of operational counters for an :class:`ArrowKafkaSink`.
+
+    All values are monotonically increasing from sink construction.
+    Take two snapshots to compute per-interval rates::
+
+        before = sink.stats()
+        time.sleep(1.0)
+        after = sink.stats()
+        rows_per_sec = after.enqueued_total - before.enqueued_total
+
+    Obtain via :meth:`ArrowKafkaSink.stats`.
+    """
+
+    enqueued_total: int
+    """Total rows successfully enqueued since the sink was created.
+
+    Incremented for every row handed to the librdkafka send buffer by
+    :meth:`ArrowKafkaSink.consume_arrow`.  Does **not** count broker
+    acknowledgements.
+    """
+
+    flush_count: int
+    """Total :meth:`ArrowKafkaSink.flush` calls since construction, including
+    those triggered internally by :meth:`ArrowKafkaSink.close`.
+    """
+
+    sr_cache_hits: int
+    """Schema Registry lookups served from the in-process cache (no network)."""
+
+    sr_cache_misses: int
+    """Schema Registry lookups that required a network round-trip."""
+
+    def sr_total_lookups(self) -> int:
+        """Total Schema Registry lookups (``sr_cache_hits + sr_cache_misses``)."""
+        ...
+
+    def sr_hit_rate(self) -> float:
+        """Schema Registry cache hit-rate in ``[0.0, 1.0]``."""
+        ...
 
 # ---------------------------------------------------------------------------
 # ArrowKafkaSink
@@ -175,6 +234,11 @@ class ArrowKafkaSink:
         batch_size: int = 65536,
         compression_type: str = "none",
         subject_name_strategy: str = "topic_name",
+        enable_idempotence: bool = False,
+        acks: str = "1",
+        retries: int | None = None,
+        retry_backoff_ms: int = 100,
+        request_timeout_ms: int = 30000,
     ) -> None:
         """Create a new ``ArrowKafkaSink``.
 
@@ -208,6 +272,21 @@ class ArrowKafkaSink:
 
             Default: ``"topic_name"``.
 
+        :param enable_idempotence: Enable idempotent producer
+            (``enable.idempotence``).  When ``True``, librdkafka enforces
+            exactly-once delivery per partition.  Requires ``max_in_flight <= 5``.
+            Default: ``False``.
+        :param acks: Broker acknowledgement level (``acks``).
+            ``"0"`` = fire-and-forget, ``"1"`` = leader ack (default),
+            ``"all"`` = full ISR ack.  Default: ``"1"``.
+        :param retries: Number of times librdkafka retries a failed produce
+            request (``retries``).  ``None`` uses librdkafka default.
+            Default: ``None``.
+        :param retry_backoff_ms: Time between retries in milliseconds
+            (``retry.backoff.ms``).  Default: ``100``.
+        :param request_timeout_ms: Per-request broker timeout in milliseconds
+            (``request.timeout.ms``).  Default: ``30000``.
+
         :raises ConfigError: If any argument is invalid or librdkafka rejects
             the producer configuration.
         """
@@ -220,6 +299,7 @@ class ArrowKafkaSink:
         key_cols: list[str] | None = None,
         key_separator: str = "_",
         timeout_ms: int | None = None,
+        headers: dict[str, bytes] | None = None,
     ) -> int:
         """Send a ``pyarrow.Table`` to a Kafka topic.
 
@@ -249,6 +329,9 @@ class ArrowKafkaSink:
             :exc:`EnqueueError` with ``exc.args[1]`` set to the number of rows
             already enqueued.  When ``None`` (default), the call retries
             indefinitely until every row is enqueued.
+        :param headers: Optional dict of Kafka message headers.  Each key is a
+            string header name, each value is raw bytes.  Headers are attached
+            to every message produced by this call.  Default: ``None``.
 
         :returns: Number of rows successfully enqueued.  On success this always
             equals ``table.num_rows``.  Partial counts are only visible through
@@ -301,3 +384,62 @@ class ArrowKafkaSink:
         :raises FlushTimeoutError: If the 30-second flush timeout is exceeded.
         """
         ...
+
+    def stats(self) -> SinkStats:
+        """Return a point-in-time snapshot of operational counters.
+
+        All values are monotonically increasing since construction.
+        Call this method twice and subtract to compute per-interval rates.
+
+        :returns: :class:`SinkStats` snapshot.
+        """
+        ...
+
+# ---------------------------------------------------------------------------
+# Module-level functions
+# ---------------------------------------------------------------------------
+
+def create_topic_if_not_exists(
+    bootstrap_servers: str,
+    topic: str,
+    num_partitions: int = 1,
+    replication_factor: int = 1,
+    timeout_ms: int = 10000,
+) -> bool:
+    """Ensure a Kafka topic exists, creating it if necessary.
+
+    Returns ``True`` if the topic was **newly created**, ``False`` if it
+    **already existed``.
+
+    Any other broker error (insufficient permissions, replication factor
+    exceeds cluster size, etc.) raises :exc:`AdminError`.
+
+    The GIL is released for the duration of the blocking admin operation.
+
+    :param bootstrap_servers: Comma-separated ``host:port`` bootstrap servers.
+    :param topic: Name of the topic to create.
+    :param num_partitions: Number of partitions for the new topic.
+        Ignored if the topic already exists.  Default: ``1``.
+    :param replication_factor: Replication factor.  Must be ≤ the number of
+        brokers in the cluster.  Ignored if the topic already exists.
+        Default: ``1``.
+    :param timeout_ms: Max time to wait for a broker response in milliseconds.
+        Default: ``10000`` (10 seconds).
+
+    :returns: ``True`` = topic created, ``False`` = topic already existed.
+    :raises AdminError: Broker unreachable, rejected request, or timeout.
+
+    Example::
+
+        from arrow_kafka_pyo3 import create_topic_if_not_exists, AdminError
+
+        try:
+            created = create_topic_if_not_exists(
+                "localhost:9092", "my_events",
+                num_partitions=6, replication_factor=1,
+            )
+            print("created" if created else "already existed")
+        except AdminError as exc:
+            print(f"topic admin failed: {exc}")
+    """
+    ...

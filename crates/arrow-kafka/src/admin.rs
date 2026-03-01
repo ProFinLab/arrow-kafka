@@ -117,7 +117,7 @@ pub fn create_topic_if_not_exists(
 
     // `results` is Vec<TopicResult> where TopicResult = Result<String, (String, RDKafkaErrorCode)>.
     // There is exactly one entry since we submitted exactly one topic.
-    for result in results {
+    if let Some(result) = results.into_iter().next() {
         match result {
             Ok(created_name) => {
                 debug_assert_eq!(
@@ -143,7 +143,7 @@ pub fn create_topic_if_not_exists(
     // per requested topic.  Treat an empty result as an unexpected error.
     Err(SinkError::Admin {
         topic: topic.to_string(),
-        cause: "broker returned an empty result set for create_topics request".to_string(),
+        cause: "broker returned no results for topic creation request".to_string(),
     })
 }
 

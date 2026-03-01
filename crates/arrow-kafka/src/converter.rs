@@ -24,6 +24,14 @@ pub struct ArrowToAvroConverter {
     /// annotations (e.g. emitting `{"type":"long"}` instead of
     /// `{"type":"long","logicalType":"timestamp-micros"}`).
     field_avro_schemas: Vec<AvroSchemaDef>,
+    /// Whether each field's top-level Avro schema is a Union type.
+    ///
+    /// `arrow-avro` 58.x emits `["null", T]` Union schemas for some Arrow
+    /// types (notably `Timestamp`) even when the Arrow field is non-nullable.
+    /// This flag captures the *actual Avro structure* so that
+    /// `arrow_value_to_avro_value` can correctly wrap values in
+    /// `AvroValue::Union(1, …)` regardless of Arrow nullability.
+    field_is_avro_union: Vec<bool>,
 }
 
 impl ArrowToAvroConverter {
@@ -44,12 +52,26 @@ impl ArrowToAvroConverter {
         // assuming which logicalType the arrow-avro crate emitted.
         let field_avro_schemas = extract_field_inner_schemas(&avro_schema);
 
+        // Track which fields have a Union Avro schema.  arrow-avro 58.x
+        // wraps some types (notably Timestamp) in ["null", T] even when the
+        // Arrow field is non-nullable, so we use Avro structure — not Arrow
+        // nullability — to decide whether to emit AvroValue::Union wrappers.
+        let field_is_avro_union: Vec<bool> = match &avro_schema {
+            AvroSchemaDef::Record(r) => r
+                .fields
+                .iter()
+                .map(|f| matches!(f.schema, AvroSchemaDef::Union(_)))
+                .collect(),
+            _ => vec![],
+        };
+
         Ok(Self {
             avro_schema,
             arrow_schema,
             schema_json: avro_schema_wrapper.json_string,
             schema_name,
             field_avro_schemas,
+            field_is_avro_union,
         })
     }
 
@@ -87,8 +109,20 @@ impl ArrowToAvroConverter {
                 .field_avro_schemas
                 .get(col_idx)
                 .unwrap_or(&AvroSchemaDef::Null);
-            let value =
-                arrow_value_to_avro_value(column.as_ref(), field, avro_field_schema, row_index)?;
+            // Use the Avro-schema-derived union flag rather than Arrow's
+            // is_nullable() — see field_is_avro_union doc for the rationale.
+            let is_avro_union = self
+                .field_is_avro_union
+                .get(col_idx)
+                .copied()
+                .unwrap_or(false);
+            let value = arrow_value_to_avro_value(
+                column.as_ref(),
+                field,
+                avro_field_schema,
+                row_index,
+                is_avro_union,
+            )?;
             fields.push((field.name().clone(), value));
         }
 
@@ -158,11 +192,15 @@ fn arrow_value_to_avro_value(
     field: &Field,
     avro_field_schema: &AvroSchemaDef,
     row_index: usize,
+    is_avro_union: bool,
 ) -> Result<AvroValue> {
-    let nullable = field.is_nullable();
-
+    // Use is_avro_union (derived from the actual Avro schema structure) rather
+    // than field.is_nullable() (Arrow nullability) to decide Union wrapping.
+    // arrow-avro 58.x emits ["null", T] Union schemas for Timestamp fields
+    // even when the Arrow field is declared non-nullable, so Arrow nullability
+    // alone is not a reliable signal for whether to produce AvroValue::Union.
     if array.is_null(row_index) {
-        return if nullable {
+        return if is_avro_union {
             Ok(AvroValue::Union(0, Box::new(AvroValue::Null)))
         } else {
             Ok(AvroValue::Null)
@@ -428,10 +466,10 @@ fn arrow_value_to_avro_value(
             }
         };
 
-    // Wrap in a Union for nullable fields:
+    // Wrap in a Union when the Avro field schema is a Union type:
     //   Union(0, Null)  — null branch (handled at the top of this function)
     //   Union(1, value) — value branch
-    if nullable {
+    if is_avro_union {
         Ok(AvroValue::Union(1, Box::new(raw)))
     } else {
         Ok(raw)
@@ -591,6 +629,54 @@ mod tests {
     use arrow::datatypes::{Field, Schema};
     use std::sync::Arc;
 
+    // -----------------------------------------------------------------------
+    // Diagnostic: print actual Avro JSON produced by arrow-avro for Timestamps
+    // Run with: cargo test --lib -- converter::tests::diag_timestamp_schema --nocapture
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn diag_timestamp_schema_json() {
+        for (name, dt) in [
+            ("ts_s", DataType::Timestamp(TimeUnit::Second, None)),
+            ("ts_ms", DataType::Timestamp(TimeUnit::Millisecond, None)),
+            ("ts_us", DataType::Timestamp(TimeUnit::Microsecond, None)),
+            ("ts_ns", DataType::Timestamp(TimeUnit::Nanosecond, None)),
+        ] {
+            // non-nullable
+            let schema = Arc::new(Schema::new(vec![Field::new(name, dt.clone(), false)]));
+            let wrapper = arrow_avro::schema::AvroSchema::try_from(schema.as_ref()).unwrap();
+            eprintln!("[non-nullable {}] JSON: {}", name, wrapper.json_string);
+
+            let avro = apache_avro::Schema::parse_str(&wrapper.json_string).unwrap();
+            if let apache_avro::Schema::Record(r) = &avro {
+                for f in &r.fields {
+                    eprintln!(
+                        "  field '{}' schema variant: {:?}  is_union={}",
+                        f.name,
+                        std::mem::discriminant(&f.schema),
+                        matches!(f.schema, apache_avro::Schema::Union(_)),
+                    );
+                }
+            }
+
+            // nullable
+            let schema2 = Arc::new(Schema::new(vec![Field::new(name, dt.clone(), true)]));
+            let wrapper2 = arrow_avro::schema::AvroSchema::try_from(schema2.as_ref()).unwrap();
+            eprintln!("[nullable {}] JSON: {}", name, wrapper2.json_string);
+
+            let avro2 = apache_avro::Schema::parse_str(&wrapper2.json_string).unwrap();
+            if let apache_avro::Schema::Record(r) = &avro2 {
+                for f in &r.fields {
+                    eprintln!(
+                        "  field '{}' schema variant: {:?}  is_union={}",
+                        f.name,
+                        std::mem::discriminant(&f.schema),
+                        matches!(f.schema, apache_avro::Schema::Union(_)),
+                    );
+                }
+            }
+        }
+    }
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

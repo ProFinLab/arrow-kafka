@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -49,14 +50,10 @@ pub enum SubjectNameStrategy {
     TopicRecordName,
 }
 
-impl SubjectNameStrategy {
-    /// Parse a strategy from a lowercase string identifier.
-    ///
-    /// Valid values: `"topic_name"`, `"record_name"`, `"topic_record_name"`.
-    ///
-    /// Returns `Err` with a descriptive message on unrecognised input so the
-    /// caller can surface it as a `ConfigError` / `ValueError`.
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl FromStr for SubjectNameStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "topic_name" => Ok(Self::TopicName),
             "record_name" => Ok(Self::RecordName),
@@ -66,6 +63,23 @@ impl SubjectNameStrategy {
                  valid values: topic_name, record_name, topic_record_name"
             )),
         }
+    }
+}
+
+impl SubjectNameStrategy {
+    /// Parse a strategy from a lowercase string identifier (deprecated).
+    ///
+    /// Prefer using the standard `FromStr` trait via `s.parse::<SubjectNameStrategy>()`
+    /// or the infallible `.parse()` method on string slices.
+    ///
+    /// Valid values: `"topic_name"`, `"record_name"`, `"topic_record_name"`.
+    #[deprecated(
+        since = "0.0.11",
+        note = "use the standard FromStr trait instead: `s.parse::<SubjectNameStrategy>()`"
+    )]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        FromStr::from_str(s)
     }
 
     /// Compute the subject name given a topic and the Avro record name.
@@ -253,22 +267,23 @@ mod tests {
     #[test]
     fn from_str_valid() {
         assert!(matches!(
-            SubjectNameStrategy::from_str("topic_name"),
+            "topic_name".parse::<SubjectNameStrategy>(),
             Ok(SubjectNameStrategy::TopicName)
         ));
         assert!(matches!(
-            SubjectNameStrategy::from_str("record_name"),
+            "record_name".parse::<SubjectNameStrategy>(),
             Ok(SubjectNameStrategy::RecordName)
         ));
         assert!(matches!(
-            SubjectNameStrategy::from_str("topic_record_name"),
+            "topic_record_name".parse::<SubjectNameStrategy>(),
             Ok(SubjectNameStrategy::TopicRecordName)
         ));
     }
 
     #[test]
     fn from_str_invalid() {
-        let err = SubjectNameStrategy::from_str("bad_value").unwrap_err();
+        let err: Result<SubjectNameStrategy, _> = "bad_value".parse();
+        let err = err.unwrap_err();
         assert!(err.contains("bad_value"));
         assert!(err.contains("topic_name"));
     }

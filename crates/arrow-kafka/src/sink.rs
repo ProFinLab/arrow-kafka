@@ -1,10 +1,14 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use arrow::record_batch::RecordBatch;
 use rdkafka::ClientConfig;
 use rdkafka::error::KafkaError;
+use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use rdkafka::types::RDKafkaErrorCode;
 
@@ -181,6 +185,9 @@ impl ArrowKafkaSink {
     ///   `SinkError::Enqueue { enqueued_so_far, … }` so the caller can
     ///   decide whether to retry or abort.  When `None`, the call will
     ///   retry indefinitely until every row is enqueued.
+    /// - `headers` — Optional Kafka message headers to attach to every
+    ///   message produced by this call.  Each header is a string name
+    ///   and raw byte value.  Pass `None` or an empty map for no headers.
     ///
     /// # Errors
     /// - `SinkError::SchemaRegistry` — schema registration failed.
@@ -194,6 +201,7 @@ impl ArrowKafkaSink {
         key_cols: Option<&[String]>,
         key_separator: &str,
         enqueue_timeout_ms: Option<u64>,
+        headers: Option<&HashMap<String, Vec<u8>>>,
     ) -> Result<usize, SinkError> {
         if batches.is_empty() {
             return Ok(0);
@@ -218,6 +226,7 @@ impl ArrowKafkaSink {
             key_cols,
             key_separator,
             deadline,
+            headers,
         )
     }
 
@@ -284,6 +293,7 @@ impl ArrowKafkaSink {
     // -----------------------------------------------------------------------
 
     /// Inner loop: register schema, build keys, serialise rows, enqueue.
+    #[allow(clippy::too_many_arguments)]
     fn process_and_send(
         &self,
         batches: &[RecordBatch],
@@ -292,6 +302,7 @@ impl ArrowKafkaSink {
         key_cols: Option<&[String]>,
         key_separator: &str,
         deadline: Option<Instant>,
+        headers: Option<&HashMap<String, Vec<u8>>>,
     ) -> Result<usize, SinkError> {
         let mut enqueued = 0usize;
 
@@ -344,6 +355,20 @@ impl ArrowKafkaSink {
                     record = record.key(key_bytes);
                 }
 
+                // Attach Kafka headers if provided.
+                if let Some(headers_map) = headers
+                    && !headers_map.is_empty()
+                {
+                    let mut owned_headers = OwnedHeaders::new();
+                    for (name, value) in headers_map {
+                        owned_headers = owned_headers.insert(Header {
+                            key: name.as_str(),
+                            value: Some(value.as_slice()),
+                        });
+                    }
+                    record = record.headers(owned_headers);
+                }
+
                 // -- Enqueue with deadline-bounded back-pressure -------------
                 // Task 1.2: the queue-full retry loop now checks the caller's
                 // deadline before each attempt.
@@ -351,16 +376,16 @@ impl ArrowKafkaSink {
                 loop {
                     // Check deadline *before* each retry so that a caller
                     // with a very tight budget can escape quickly.
-                    if let Some(dl) = deadline {
-                        if Instant::now() >= dl {
-                            return Err(SinkError::Enqueue {
-                                topic: topic.to_string(),
-                                enqueued_so_far: enqueued,
-                                cause: "enqueue deadline exceeded: \
-                                        producer queue was still full at deadline"
-                                    .to_string(),
-                            });
-                        }
+                    if let Some(dl) = deadline
+                        && Instant::now() >= dl
+                    {
+                        return Err(SinkError::Enqueue {
+                            topic: topic.to_string(),
+                            enqueued_so_far: enqueued,
+                            cause: "enqueue deadline exceeded: \
+                                    producer queue was still full at deadline"
+                                .to_string(),
+                        });
                     }
 
                     match self.producer.send_result(record_to_send) {
