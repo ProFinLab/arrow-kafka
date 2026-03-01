@@ -11,7 +11,7 @@ name = "arrow_kafka"
 crate-type = ["rlib"]
 
 [features]
-vendored-ssl = ["dep:openssl", "openssl/vendored", "rdkafka/ssl-vendored", "rdkafka/libz-static"]
+vendored-ssl = ["dep:openssl", "openssl/vendored", "rdkafka/ssl-vendored", "rdkafka/libz-static", "rdkafka/curl-static"]
 
 [dependencies]
 arrow = { workspace = true }
