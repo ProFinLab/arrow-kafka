@@ -1,6 +1,6 @@
 [package]
 name = "arrow-kafka"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Rust-based high-performance Kafka sink with Arrow zero-copy support"
 authors = ["NanoQuant Team"]
@@ -11,7 +11,13 @@ name = "arrow_kafka"
 crate-type = ["rlib"]
 
 [features]
-vendored-ssl = ["dep:openssl", "openssl/vendored", "rdkafka/ssl-vendored", "rdkafka/libz-static", "rdkafka/curl-static"]
+vendored-ssl = [
+    "dep:openssl",
+    "openssl/vendored",
+    "rdkafka/ssl-vendored",
+    "rdkafka/libz-static",
+    "rdkafka/curl-static",
+]
 
 [dependencies]
 arrow = { workspace = true }
@@ -19,6 +25,7 @@ arrow-avro = { workspace = true }
 apache-avro = { workspace = true }
 rdkafka = { workspace = true }
 schema_registry_converter = { workspace = true }
-openssl = { version = "0.10", optional = true }
+
 anyhow = { workspace = true }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1.49.0", features = ["rt"] }
+openssl = { version = "0.10.75", optional = true }

@@ -1,6 +1,6 @@
 [package]
 name = "arrow-kafka-pyo3"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [lib]
@@ -11,19 +11,7 @@ crate-type = ["cdylib"]
 vendored-ssl = ["arrow-kafka/vendored-ssl"]
 
 [dependencies]
-pyo3 = { version = "0.28.2", features = ["extension-module"] }
-arrow = { version = "58.0.0", features = ["ffi", "pyarrow"] }
-arrow-kafka = { path = "../arrow-kafka" }
+pyo3 = { workspace = true }
+arrow = { workspace = true }
 anyhow = { workspace = true }
-
-[profile.release]
-opt-level = 3
-debug = false
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-incremental = false
-overflow-checks = false
-debug-assertions = false
-split-debuginfo = "off"
+arrow-kafka = { path = "../arrow-kafka" }

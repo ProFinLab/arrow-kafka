@@ -9,7 +9,7 @@ readme = "README.md"
 license = "MIT"
 license-file = "LICENSE"
 requires-python = ">=3.10"
-authors = [{ name = "NanoQuant Team" }]
+authors = [{ name = "ProFinLab Team" }]
 keywords = ["arrow", "kafka", "pyarrow", "redpanda", "avro", "schema-registry"]
 classifiers = [
     "Programming Language :: Rust",
@@ -22,19 +22,19 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dynamic = ["version"]
-dependencies = ["pyarrow>=18.0.0"]
+
 
 [project.urls]
-Repository = "https://github.com/nanoquant/arrow-kafka"
+Repository = "https://github.com/ProFinLab/arrow-kafka"
 
 [tool.maturin]
 manifest-path = "crates/arrow-kafka-pyo3/Cargo.toml"
 features = ["pyo3/extension-module"]
-# Include type stub in wheel (maturin includes *.pyi in package dir by default when present)
-include = ["arrow_kafka_pyo3.pyi"]
+
 [dependency-groups]
 dev = [
     "ruff",
+    "pandas",
     "pytest",
     "pyarrow",
     "confluent_kafka"

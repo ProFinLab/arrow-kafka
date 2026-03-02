@@ -3,9 +3,21 @@ resolver = "3"
 members = ["crates/*"]
 [workspace.dependencies]
 pyo3 = { version = "0.28.2", features = ["extension-module"] }
-arrow = { version = "58.0.0", features = ["ffi"] }
+arrow = { version = "58.0.0", features = ["ffi", "pyarrow"] }
 arrow-avro = { version = "58.0.0" }
 apache-avro = { version = "0.21.0" }
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio", "external-lz4"] }
 schema_registry_converter = { version = "4.8.0", features = ["avro", "blocking"] }
 anyhow = "1.0.102"
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+overflow-checks = false
+debug-assertions = false
+split-debuginfo = "off"
