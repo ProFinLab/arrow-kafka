@@ -1,23 +1,25 @@
-# .github/workflows/release.yml
 name: Release
 
 on:
-  workflow_dispatch: # 仅手动触发
+  workflow_dispatch:
     inputs:
       target:
-        description: "Release target"
+        description: "Publish target"
         required: true
-        default: "all"
+        default: "pypi"
         type: choice
         options:
-          - pypi # 仅 PyPI
-          - crate # 仅 crates.io
-          - all # 两者都发布
+          - pypi
+          - crate
+          - all
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
+  # 包含完整的构建逻辑以确保发布内容一致性
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
@@ -121,7 +123,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: false
+          sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -147,7 +149,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: false
+          sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -174,11 +176,6 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.target == 'pypi' || github.event.inputs.target == 'all' }}
     needs: [linux, musllinux, windows, macos, sdist]
-    permissions:
-      id-token: write
-      contents: read
-      attestations: write
-    environment: pypi # 可选：添加环境保护规则
     steps:
       - uses: actions/download-artifact@v6
       - name: Generate artifact attestation
@@ -197,7 +194,6 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.target == 'crate' || github.event.inputs.target == 'all' }}
     needs: [linux, musllinux, windows, macos, sdist]
-    environment: crates-io # 可选：添加环境保护规则
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
