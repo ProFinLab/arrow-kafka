@@ -7,7 +7,6 @@ name = "arrow-kafka-pyo3"
 description = "High-performance Python bridge from PyArrow tables to Kafka/Redpanda via zero-copy Arrow FFI"
 readme = "README.md"
 license = "MIT"
-license-file = "LICENSE"
 requires-python = ">=3.10"
 authors = [{ name = "ProFinLab Team" }]
 keywords = ["arrow", "kafka", "pyarrow", "redpanda", "avro", "schema-registry"]

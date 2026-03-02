@@ -2,7 +2,9 @@
 name = "arrow-kafka-pyo3"
 version = "0.2.0"
 edition = "2024"
-
+description = "High-performance Python bridge from PyArrow tables to Kafka/Redpanda via zero-copy Arrow FFI"
+license = "MIT"
+readme = "../README.md"
 [lib]
 name = "arrow_kafka_pyo3"
 crate-type = ["cdylib"]
@@ -15,3 +17,6 @@ pyo3 = { workspace = true }
 arrow = { workspace = true }
 anyhow = { workspace = true }
 arrow-kafka = { path = "../arrow-kafka" }
+
+[package.metadata]
+repository = "https://github.com/ProFinLab/arrow-kafka"
