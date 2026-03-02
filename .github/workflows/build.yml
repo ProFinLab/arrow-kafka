@@ -1,32 +1,17 @@
-# .github/workflows/main.yml
-name: CI
+# .github/workflows/build.yml
+name: Build
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
     inputs:
-      action:
-        description: "Action to perform"
+      publish:
+        description: "Publish to TestPyPI?"
         required: true
-        default: "build"
-        type: choice
-        options:
-          - build        # 只构建，不发布
-          - publish      # 构建并发布
-      publish_target:
-        description: "Publish target (only used when action=publish)"
-        required: false
-        default: "testpypi"
-        type: choice
-        options:
-          - testpypi
-          - pypi
-          - crate
-          - all
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -135,7 +120,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: false  # 简化：始终不使用 sccache
+          sccache: false
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -161,7 +146,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: false  # 简化：始终不使用 sccache
+          sccache: false
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -183,16 +168,15 @@ jobs:
           name: wheels-sdist
           path: dist
 
-  # 只在手动触发且选择 publish 时运行
-  release:
-    name: Release to PyPI
+  publish-testpypi:
+    name: Publish to TestPyPI
     runs-on: ubuntu-latest
-    # 关键修改：只在 workflow_dispatch 且 action=publish 时运行
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'publish' }}
+    # 关键：只有手动触发且勾选 publish=true 时才执行
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true }}
     needs: [linux, musllinux, windows, macos, sdist]
     permissions:
       id-token: write
-      contents: write
+      contents: read
       attestations: write
     steps:
       - uses: actions/download-artifact@v6
@@ -202,34 +186,7 @@ jobs:
           subject-path: "wheels-*/*"
       - name: Install uv
         uses: astral-sh/setup-uv@v7
-      
-      # TestPyPI
       - name: Publish to TestPyPI
-        if: ${{ github.event.inputs.publish_target == 'testpypi' || github.event.inputs.publish_target == 'all' }}
-        run: uv publish 'wheels-*/*' --index-url https://test.pypi.org/simple/ 
+        run: uv publish 'wheels-*/*' --index-url https://test.pypi.org/simple/
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
-      
-      # PyPI
-      - name: Publish to PyPI
-        if: ${{ github.event.inputs.publish_target == 'pypi' || github.event.inputs.publish_target == 'all' }}
-        run: uv publish 'wheels-*/*'
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-
-  # 只在手动触发且选择 publish 时运行
-  release-crate:
-    name: Release to crates.io
-    runs-on: ubuntu-latest
-    # 关键修改：只在 workflow_dispatch 且 action=publish 时运行
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'publish' && (github.event.inputs.publish_target == 'crate' || github.event.inputs.publish_target == 'all') }}
-    needs: [linux, musllinux, windows, macos, sdist]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
-      - name: Publish arrow-kafka to crates.io
-        run: cargo publish -p arrow-kafka
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
